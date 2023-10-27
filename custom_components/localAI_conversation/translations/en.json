@@ -1,0 +1,37 @@
+{
+	"config": {
+		"error": {
+			"invalid_auth": "The auth token provided is not valid.",
+			"cannot_connect": "Failed to connect to server",
+			"unknown": "Setup failed for unknown Reasons, please refer to the logs"
+		},
+		"step": {
+			"user": {
+				"data": {
+					"name": "LLM Integration Name",
+					"verify_ssl": "Verify SSL",
+					"api_key": "LocalAI API key",
+					"url": "LocalAI server URL"
+				},
+				"description": "Enter your LocalAI credentials.",
+				"title": "Server Setup"
+			}
+		}
+	},
+	"options": {
+		"error": {
+			"invalid_path": "The path provided is not valid. Should be in the format `user/repo-name` and should be a valid github repository."
+		},
+		"step": {
+			"init": {
+				"title": "Manage Repos",
+				"data": {
+					"repos": "Existing Repos: Uncheck any repos you want to remove.",
+					"path": "New Repo: Path to the repository e.g. home-assistant-core",
+					"name": "New Repo: Name of the sensor."
+				},
+				"description": "Remove existing repos or add a new repo."
+			}
+		}
+	}
+}
