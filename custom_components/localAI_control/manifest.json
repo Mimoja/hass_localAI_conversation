@@ -1,0 +1,11 @@
+{
+  "codeowners": ["@mimoja"],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/Mimoja/hass_localAI_conversation",
+  "domain": "localAI_conversation",
+  "iot_class": "cloud_push",
+  "name": "LocaAI Conversation and Control",
+  "requirements": [],
+  "version": "1.0.0"
+}

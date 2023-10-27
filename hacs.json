@@ -1,0 +1,5 @@
+{
+  "name": "LocaAI Conversation and Control",
+  "render_readme": true,
+  "iot_class": "cloud_push"
+}
