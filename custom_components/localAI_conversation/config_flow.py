@@ -24,7 +24,6 @@ from aiohttp.client_exceptions import (
 import asyncio
 from asyncio import timeout
 
-
 from .const import (
     CONF_CHAT_MODEL,
     CONF_PROMPT,

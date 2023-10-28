@@ -5,6 +5,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from homeassistant.components.conversation import agent
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import MATCH_ALL
 
 from urllib.parse import urljoin
 
@@ -51,6 +52,11 @@ class LocalAIAgent(agent.AbstractConversationAgent):
             "url": "https://github.com/mimoja",
         }
 
+    @property
+    def supported_languages(self) -> list[str]:
+        """Return a list of supported languages."""
+        return MATCH_ALL
+
     async def async_process(
         self, user_input: agent.ConversationInput
     ) -> agent.ConversationResult:
@@ -72,14 +78,14 @@ class LocalAIAgent(agent.AbstractConversationAgent):
         data = {}
         session = async_get_clientsession(hass)
 
-        async with session.post(
+        async with session.get(
             urljoin(config[CONF_URL], ENDPOINT_MODELS),
             headers=headers,
             data=data,
             verify_ssl=config[CONF_VERIFY_SSL],
+            raise_for_status=True,
         ) as res:
-            res.raise_for_status()
-        return cast(dict, await resp.json())
+            await res.json()
 
 
 """

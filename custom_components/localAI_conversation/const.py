@@ -2,8 +2,8 @@
 
 DOMAIN = "localAI_conversation"
 
-DEFAULT_API_KEY = "sk-00000000000000000"
-DEFAULT_URL = "http://localhost:8080"
+DEFAULT_API_KEY = "sk-XXXXXXXXXXXXXXXXXXXX"
+DEFAULT_URL = "http://localhost:8080/v1"
 DEFAULT_VERIFY_SSL = True
 
 CONF_PROMPT = "prompt"
