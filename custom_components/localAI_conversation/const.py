@@ -35,6 +35,8 @@ CONF_TOP_P = "top_p"
 DEFAULT_TOP_P = 0.95
 CONF_TOP_K = "top_k"
 DEFAULT_TOP_K = 40
+CONF_SEND_FUNCTIONS = "send_functions"
+DEFAULT_SEND_FUNCTIONS = False
 
 ERROR_CANNOT_CONNECT = "cannot_connect"
 ERROR_INVALID_AUTH = "invalid_auth"

@@ -34,6 +34,7 @@ from .const import (
     CONF_TEMPERATURE,
     CONF_TOP_K,
     CONF_TOP_P,
+    CONF_SEND_FUNCTIONS,
     DEFAULT_API_KEY,
     DEFAULT_URL,
     DEFAULT_VERIFY_SSL,
@@ -42,6 +43,7 @@ from .const import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_K,
     DEFAULT_TOP_P,
+    DEFAULT_SEND_FUNCTIONS,
     DOMAIN,
 )
 
@@ -171,11 +173,15 @@ class LocalAIAgent(DefaultAgent):
         data = {
             "model": model,
             "messages": messages,
-            "functions": _buildFunctions(self.hass),
             "temperature": temperature,
+            "function": [],
             "top_p": top_p,
             "stream": False,
         }
+
+        if self.config_entry.options.get(CONF_SEND_FUNCTIONS, DEFAULT_SEND_FUNCTIONS):
+            data["functions"] = (_buildFunctions(self.hass),)
+
         _LOGGER.debug(
             "Sending request %s",
             json.dumps({"header": headers, "body": data}),

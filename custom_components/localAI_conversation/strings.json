@@ -25,7 +25,8 @@
 					"model": "[%key:common::generic::model%]",
 					"temperature": "Temperature",
 					"top_p": "Top P",
-					"top_k": "Top K"
+					"top_k": "Top K",
+					"send_functions": "Send openAI style function definitions for service endpoints"
 				}
 			}
 		}

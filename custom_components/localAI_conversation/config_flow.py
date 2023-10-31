@@ -30,6 +30,7 @@ from .const import (
     CONF_TEMPERATURE,
     CONF_TOP_K,
     CONF_TOP_P,
+    CONF_SEND_FUNCTIONS,
     DEFAULT_API_KEY,
     DEFAULT_URL,
     DEFAULT_VERIFY_SSL,
@@ -38,6 +39,7 @@ from .const import (
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_K,
     DEFAULT_TOP_P,
+    DEFAULT_SEND_FUNCTIONS,
     ERROR_CANNOT_CONNECT,
     ERROR_INVALID_AUTH,
     ERROR_UNKNOWN,
@@ -62,6 +64,7 @@ DEFAULT_OPTIONS = types.MappingProxyType(
         CONF_TEMPERATURE: DEFAULT_TEMPERATURE,
         CONF_TOP_P: DEFAULT_TOP_P,
         CONF_TOP_K: DEFAULT_TOP_K,
+        CONF_SEND_FUNCTIONS: DEFAULT_SEND_FUNCTIONS,
     }
 )
 
@@ -157,6 +160,13 @@ def local_ai_config_option_schema(options: MappingProxyType[str, Any]) -> dict:
     """Return a schema for Google Generative AI completion options."""
     if not options:
         options = DEFAULT_OPTIONS
+    else:
+        d_options = dict(options.items())
+        for option_entry in DEFAULT_OPTIONS:
+            if option_entry not in d_options:
+                d_options[option_entry] = DEFAULT_OPTIONS[option_entry]
+        options = types.MappingProxyType(d_options)
+
     return {
         vol.Optional(
             CONF_PROMPT,
@@ -185,4 +195,9 @@ def local_ai_config_option_schema(options: MappingProxyType[str, Any]) -> dict:
             description={"suggested_value": options[CONF_TOP_K]},
             default=DEFAULT_TOP_K,
         ): int,
+        vol.Optional(
+            CONF_SEND_FUNCTIONS,
+            description={"suggested_value": options[CONF_SEND_FUNCTIONS]},
+            default=DEFAULT_SEND_FUNCTIONS,
+        ): bool,
     }
