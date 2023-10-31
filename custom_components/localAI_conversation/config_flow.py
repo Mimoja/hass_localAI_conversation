@@ -43,7 +43,7 @@ from .const import (
     ERROR_UNKNOWN,
     DOMAIN,
 )
-from .conversation import LocalAIAgent
+from .localai_agent import LocalAIAgent
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from homeassistant.core import HomeAssistant
 
-from homeassistant.components.conversation import agent
+from homeassistant.components.conversation import agent, DefaultAgent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import MATCH_ALL
 from homeassistant.util import ulid
@@ -15,12 +15,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from aiohttp import ClientError, ClientResponseError
 
 from urllib.parse import urljoin
-import logging
+import logging, json
 from http import HTTPStatus
-import json
+import pydantic
 
 ENDPOINT_MODELS = "models"
 ENDPOINT_CHAT_COMPLETION = "chat/completions"
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,8 +45,56 @@ from .const import (
     DOMAIN,
 )
 
+from typing import List
 
-class LocalAIAgent(agent.AbstractConversationAgent):
+
+def _buildFunctions(hass: HomeAssistant):
+    services = hass.services.async_services()
+    for service in services:
+        _LOGGER.info("- Service: %s", service)
+
+    functions = [
+        {
+            "name": "get_services",
+            "description": "Get all list of all known services",
+        },
+        {
+            "name": "get_service_info",
+            "description": "Get all functions for a given service",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "service": {
+                        "type": "string",
+                        "description": "The service to inspect",
+                    },
+                },
+                "required": ["service"],
+            },
+        },
+        {
+            "name": "call_service",
+            "description": "Call a function with a service",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "service": {
+                        "type": "string",
+                        "description": "The service to call",
+                    },
+                    "function": {
+                        "type": "string",
+                        "description": "The function to call",
+                    },
+                },
+                "required": ["service", "function"],
+            },
+        },
+    ]
+    return functions
+
+
+class LocalAIAgent(DefaultAgent):
     """LocalAI conversation agent."""
 
     def _get_session(self):
@@ -106,16 +155,7 @@ class LocalAIAgent(agent.AbstractConversationAgent):
             response=intent_response, conversation_id=conversation_id
         )
 
-    async def async_process(
-        self, user_input: agent.ConversationInput
-    ) -> agent.ConversationResult:
-        """Process a sentence."""
-        _LOGGER.debug("Processing in %s: %s", user_input.language, user_input.text)
-
-        if "session" not in dir(self) or not self.session:
-            self.session = self._get_session()
-
-        raw_prompt = self.config_entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
+    async def async_send_to_ai(self, messages):
         model = self.config_entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         top_p = self.config_entry.options.get(CONF_TOP_P, DEFAULT_TOP_P)
         temperature = self.config_entry.options.get(
@@ -125,12 +165,79 @@ class LocalAIAgent(agent.AbstractConversationAgent):
         verify_ssl = self.config_entry.data.get(CONF_VERIFY_SSL, DEFAULT_VERIFY_SSL)
         api_key = self.config_entry.data.get(CONF_API_KEY, DEFAULT_API_KEY)
 
+        _LOGGER.debug("Prompt for %s: %s", model, messages)
+
+        headers = LocalAIAgent.create_headers(api_key)
+        data = {
+            "model": model,
+            "messages": messages,
+            "functions": _buildFunctions(self.hass),
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": False,
+        }
+        _LOGGER.debug(
+            "Sending request %s",
+            json.dumps({"header": headers, "body": data}),
+        )
+
+        async with self.session.post(
+            urljoin(url + "/", ENDPOINT_CHAT_COMPLETION),
+            headers=headers,
+            data=json.dumps(data),
+            verify_ssl=verify_ssl,
+        ) as res:
+            if res.status != HTTPStatus.OK:
+                _LOGGER.warning("LocalAI Call failed with http code %s", res.status)
+            try:
+                res.raise_for_status()
+            except ClientResponseError as err:
+                _LOGGER.error(f"Request failed: {err}")
+                raise Exception(f"Request failed: {err}")
+
+            try:
+                result = await res.json()
+            except ValueError as err:
+                # If json decoder could not parse the response
+                _LOGGER.exception("Failed to parse response")
+                raise Exception(f"Response misformated: {err}")
+
+            try:
+                choices = result["choices"]
+            except KeyError as err:
+                _LOGGER.exception("No field choices in response from AI %s", result)
+                raise Exception(f"No Answer provided: {err}")
+
+            try:
+                response = choices[0]["message"]
+            except KeyError as err:
+                _LOGGER.exception(
+                    "No field message in choices in response from AI %s", result
+                )
+                raise Exception(f"No Answer provided: {err}")
+
+            _LOGGER.debug("Result %s", result)
+            _LOGGER.debug("Response %s", response)
+
+            messages.append(response)
+            return messages
+
+    async def async_process(
+        self, user_input: agent.ConversationInput
+    ) -> agent.ConversationResult:
+        """Process a sentence."""
+        _LOGGER.debug("Processing in %s: %s", user_input.language, user_input.text)
+
+        if "session" not in dir(self) or not self.session:
+            self.session = self._get_session()
+
         if user_input.conversation_id in self.history:
             conversation_id = user_input.conversation_id
             messages = self.history[conversation_id]
         else:
             conversation_id = ulid.ulid()
             try:
+                raw_prompt = self.config_entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
                 prompt = self._async_generate_prompt(raw_prompt)
             except TemplateError as err:
                 _LOGGER.error(f"Error rendering prompt: {err}")
@@ -144,82 +251,23 @@ class LocalAIAgent(agent.AbstractConversationAgent):
 
         messages.append({"role": "user", "content": user_input.text})
 
-        _LOGGER.debug("Prompt for %s: %s", model, messages)
+        # Main execution
+        messages = await self.async_send_to_ai(messages)
 
-        headers = LocalAIAgent.create_headers(api_key)
-        data = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "top_p": top_p,
-            "stream": False,
-        }
-        _LOGGER.debug(
-            "Sending request %s",
-            json.dumps({"header": headers, "body": json.dumps(data)}),
-        )
-
-        async with self.session.post(
-            urljoin(url + "/", ENDPOINT_CHAT_COMPLETION),
-            headers=headers,
-            data=json.dumps(data),
-            verify_ssl=verify_ssl,
-        ) as res:
-            if res.status != HTTPStatus.OK:
-                _LOGGER.error("LocalAI Call failed with http code %s", res.status)
-            try:
-                res.raise_for_status()
-            except ClientResponseError as err:
-                _LOGGER.error(f"Request failed: {err}")
-                return self._format_error_response(
-                    user_input,
-                    f"Request failed: {err}",
-                    conversation_id,
-                )
-
-            try:
-                result = await res.json()
-            except ValueError as err:
-                # If json decoder could not parse the response
-                _LOGGER.exception("Failed to parse response")
-                return self._format_error_response(
-                    user_input,
-                    f"Response misformated: {err}",
-                    conversation_id,
-                )
-
-            try:
-                choices = result["choices"]
-            except KeyError as err:
-                _LOGGER.exception("No field choices in response from AI %s", result)
-                return self._format_error_response(
-                    user_input,
-                    f"No Answer provided: {err}",
-                    conversation_id,
-                )
-            try:
-                response = choices[0]["message"]
-            except KeyError:
-                _LOGGER.exception(
-                    "No field message in choices in response from AI %s", result
-                )
-                return self._format_error_response(
-                    user_input,
-                    f"No Answer provided: {err}",
-                    conversation_id,
-                )
-
-            _LOGGER.debug("Result %s", result)
-            _LOGGER.debug("Response %s", response)
-
-            messages.append(response)
+        try:
             self.history[conversation_id] = messages
-
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_speech(response["content"])
-            return agent.ConversationResult(
-                response=intent_response, conversation_id=conversation_id
+        except Exception as err:
+            return self._format_error_response(
+                user_input,
+                f"{err}",
+                conversation_id,
             )
+
+        intent_response = intent.IntentResponse(language=user_input.language)
+        intent_response.async_set_speech(messages[-1]["content"])
+        return agent.ConversationResult(
+            response=intent_response, conversation_id=conversation_id
+        )
 
     def _async_generate_prompt(self, raw_prompt: str) -> str:
         """Generate a prompt for the user."""
@@ -229,81 +277,3 @@ class LocalAIAgent(agent.AbstractConversationAgent):
             },
             parse_result=False,
         )
-
-
-"""
-
-
-    async def async_process_old(
-        self, user_input: conversation.ConversationInput
-    ) -> conversation.ConversationResult:
-        " " "Process a sentence. " " "
-        raw_prompt = self.config_entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
-        model = self.config_entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
-        max_tokens = self.config_entry.options.get(CONF_MAX_TOKENS, DEFAULT_MAX_TOKENS)
-        top_p = self.config_entry.options.get(CONF_TOP_P, DEFAULT_TOP_P)
-        temperature = self.config_entry.options.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE)
-
-        if user_input.conversation_id in self.history:
-            conversation_id = user_input.conversation_id
-            messages = self.history[conversation_id]
-        else:
-            conversation_id = ulid.ulid()
-            try:
-                prompt = self._async_generate_prompt(raw_prompt)
-            except TemplateError as err:
-                _LOGGER.error("Error rendering prompt: %s", err)
-                intent_response = intent.IntentResponse(language=user_input.language)
-                intent_response.async_set_error(
-                    intent.IntentResponseErrorCode.UNKNOWN,
-                    f"Sorry, I had a problem with my template: {err}",
-                )
-                return conversation.ConversationResult(
-                    response=intent_response, conversation_id=conversation_id
-                )
-            messages = [{"role": "system", "content": prompt}]
-
-        messages.append({"role": "user", "content": user_input.text})
-
-        _LOGGER.debug("Prompt for %s: %s", model, messages)
-
-        try:
-            result = await openai.ChatCompletion.acreate(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                top_p=top_p,
-                temperature=temperature,
-                user=conversation_id,
-            )
-        except error.LocalAIError as err:
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_error(
-                intent.IntentResponseErrorCode.UNKNOWN,
-                f"Sorry, I had a problem talking to Custom LocalAI compatible server: {err}",
-            )
-            return conversation.ConversationResult(
-                response=intent_response, conversation_id=conversation_id
-            )
-
-        _LOGGER.debug("Response %s", result)
-        response = result["choices"][0]["message"]
-        messages.append(response)
-        self.history[conversation_id] = messages
-
-        intent_response = intent.IntentResponse(language=user_input.language)
-        intent_response.async_set_speech(response["content"])
-        return conversation.ConversationResult(
-            response=intent_response, conversation_id=conversation_id
-        )
-
-    def _async_generate_prompt(self, raw_prompt: str) -> str:
-        " " "Generate a prompt for the user. " " "
-        return template.Template(raw_prompt, self.hass).async_render(
-            {
-                "ha_name": self.hass.config.location_name,
-            },
-            parse_result=False,
-        )
-
-"""
